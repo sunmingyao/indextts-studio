@@ -1,0 +1,35 @@
+{
+  "defaultEngine": "mlx",
+  "ffmpeg": "/opt/homebrew/bin/ffmpeg",
+  "ffprobe": "/opt/homebrew/bin/ffprobe",
+  "dataDir": "data",
+  "maxUploadMb": 50,
+  "engines": {
+    "mlx": {
+      "label": "极速版",
+      "description": "MLX int8，接近实时；情感由参考音频决定",
+      "python": "envs/mlx/bin/python",
+      "worker": "backend/workers/mlx_worker.py",
+      "modelDir": "models/mlx",
+      "hfHome": "models/mlx-hf",
+      "languages": ["zh", "en", "ja", "yue"],
+      "emotionModes": ["reference"],
+      "supportsPronunciation": false,
+      "supportsDurationFactor": true,
+      "speedHint": "约 1× 实时"
+    },
+    "mps": {
+      "label": "完整版",
+      "description": "官方 PyTorch MPS；5 语言、4 种情感控制，长文本可能 1–2 分钟",
+      "python": "envs/mps/bin/python",
+      "worker": "backend/workers/mps_worker.py",
+      "modelDir": "models/mps/checkpoints",
+      "hfHome": "models/mps/hf",
+      "languages": ["zh", "en", "ja", "es", "ar"],
+      "emotionModes": ["reference", "audio", "vector", "text"],
+      "supportsPronunciation": true,
+      "supportsDurationFactor": true,
+      "speedHint": "约 4–10× 实时"
+    }
+  }
+}
