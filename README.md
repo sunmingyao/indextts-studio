@@ -13,7 +13,7 @@ Mac 本地的 IndexTTS-2.5 语音克隆工作台，Electron + React + FastAPI，
 ## 界面
 
 浅色简洁主题，顶部 48px 隐藏式拖动栏（macOS `hiddenInset` + 交通灯）。引擎切换居中放在标题栏，引擎状态和刷新在右上角；主操作区按 1440×900 设计为单屏布局：左侧配置、右侧结果与历史，历史列表内部滚动，页面本身不滚动。
-![img.png](img.png)
+![img_1.png](img_1.png)
 
 ## 音频库
 
@@ -22,6 +22,32 @@ Mac 本地的 IndexTTS-2.5 语音克隆工作台，Electron + React + FastAPI，
 - 上传音频时会弹出主题化保存弹窗，输入新名称后可选择保存为音色参考或情感参考；不填名称默认使用上传文件名。
 - 音色库和情感库共用同一个音频选择组件：支持试听、更多菜单、另存和“从库中删除”。
 - 文件都在 `data/voices/<id>.wav`，分类信息记录在 `data/store.json` 的 `kind` 字段。
+
+## 音频翻译
+
+顶部第三个模式“音频翻译”包含：
+
+- **AI 字幕**：选择视频，提取音频，Qwen3-ASR 识别，ForcedAligner 对齐，Qwen3-4B 翻译，导出 SRT/VTT。
+- **收音翻译**：支持麦克风和系统音频；系统音频通过 Electron `getDisplayMedia` + macOS 系统音频回环采集。首次使用需要在系统设置中授权“屏幕与系统音频录制”。
+- **迷你模式**：收音翻译可缩成 760×76 无标题栏长条，只显示开始/结束、恢复按钮和最新一条译文；隐藏交通灯、菜单和最大/最小按钮。
+
+模型（仅本地 MLX，不含 NLLB 兜底）：
+
+| 模型 | 路径 |
+|---|---|
+| Qwen3-ASR 0.6B 4bit | `runtime/models/qwen3-asr-0.6b` |
+| Qwen3-ForcedAligner 0.6B 8bit | `runtime/models/qwen3-forced-aligner-0.6b` |
+| Qwen3-4B-Instruct 2507 4bit | `runtime/models/qwen3-4b-instruct` |
+
+首次使用音频翻译前准备环境和模型：
+
+```bash
+npm run translate:setup
+```
+
+字幕任务在 `data/subtitles/<job_id>/` 生成 `segments.json`、`subtitle.srt` 和 `subtitle.vtt`。收音翻译不保存音频和会话。
+
+当前已知限制：ASR 可能缺少标点，字幕分段仍可能把一个句子拆成多条；人名和术语可能不稳定；Qwen3-4B 可能对成熟内容软化或拒译，结果会标记“需复核”。系统音频包含背景音乐时，VAD 可能把音乐当成语音，建议改用更高阈值或后续接入 WebRTC/Silero VAD。
 
 ## runtime 目录
 
@@ -33,10 +59,14 @@ runtime/
     backend/                 # FastAPI 调度后端 venv
     mlx/                     # 极速版 MLX venv
     mps/                     # 完整版 PyTorch MPS venv
+    translate/               # 音频翻译 venv
   models/
     mlx/                     # MLX snapshot 全部文件
     mps/checkpoints/         # 官方 checkpoints
     mps/hf/                  # 可选缓存
+    qwen3-asr-0.6b/          # 音频翻译 ASR
+    qwen3-forced-aligner-0.6b/
+    qwen3-4b-instruct/
 ```
 
 `config/default.json` 里使用相对 runtime 的路径，例如 `envs/mlx/bin/python`、`models/mlx`、`models/mps/checkpoints`。Electron 会通过 `INDEXTTS_RUNTIME_ROOT` 指向开发模式的 `项目/runtime`，打包后指向 userData 下的 `runtime/`。
@@ -53,6 +83,9 @@ npm install
 
 # 2. 首次准备 runtime（环境 + 模型）
 npm run runtime:setup
+
+# 可选：准备音频翻译环境和模型
+npm run translate:setup
 
 # 3. 启动开发环境（Vite + Electron）
 npm run dev

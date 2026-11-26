@@ -6,8 +6,9 @@ release/
 .env
 backend/.venv/
 runtime/
-data/voices/*
+data/logs/*
 data/outputs/*
+data/subtitles/*
 data/logs/
 data/store.json
 !data/voices/.gitkeep
@@ -15,3 +16,4 @@ data/store.json
 __pycache__/
 *.pyc
 .idea/
+docs

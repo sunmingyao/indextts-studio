@@ -51,4 +51,12 @@ def load_config() -> dict:
         engine["_worker"] = str(project_path(engine.get("worker")))
         engine["_model_dir"] = str(runtime_path(engine.get("modelDir")))
         engine["_hf_home"] = str(runtime_path(engine.get("hfHome")))
+
+    translator = config.get("translator", {})
+    translator["_python"] = str(runtime_path(translator.get("python")))
+    translator["_worker"] = str(project_path(translator.get("worker")))
+    translator["_asr_model"] = str(runtime_path(translator.get("asrModel")))
+    translator["_aligner_model"] = str(runtime_path(translator.get("alignerModel")))
+    translator["_llm_model"] = str(runtime_path(translator.get("llmModel")))
+    translator["_hf_home"] = str(runtime_path(translator.get("hfHome")))
     return config

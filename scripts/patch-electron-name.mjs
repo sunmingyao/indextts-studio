@@ -21,6 +21,9 @@ const plistBuddy = "/usr/libexec/PlistBuddy";
 const values = {
   CFBundleName: "IndexTTS Studio",
   CFBundleDisplayName: "IndexTTS Studio",
+  NSAudioCaptureUsageDescription:
+    "需要访问系统音频来翻译正在播放的视频。",
+  NSMicrophoneUsageDescription: "需要访问麦克风来录制声音参考。",
 };
 
 for (const [key, value] of Object.entries(values)) {

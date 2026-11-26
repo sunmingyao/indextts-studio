@@ -20,11 +20,14 @@ from . import audio
 from .config import load_config
 from .jobs import JobManager
 from .store import Store, now_iso
+from .subtitles import SubtitleManager
 from .supervisor import EngineSupervisor
+from .translator import TranslatorSupervisor
 
 CONFIG = load_config()
 STORE = Store(CONFIG["_data_dir"])
 SUPERVISOR = EngineSupervisor(CONFIG)
+TRANSLATOR = TranslatorSupervisor(CONFIG)
 JOBS = JobManager(SUPERVISOR, STORE, CONFIG["_data_dir"])
 APP_TOKEN = os.environ.get("INDEXTTS_TOKEN", "")
 FFMPEG = audio.require_binary(CONFIG.get("ffmpeg"), "ffmpeg")
@@ -35,6 +38,16 @@ OUTPUTS_DIR = DATA_DIR / "outputs"
 VOICES_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD = int(CONFIG.get("maxUploadMb", 50)) * 1024 * 1024
+SUBTITLE_MAX_UPLOAD = int(CONFIG.get("subtitleMaxUploadMb", 4096)) * 1024 * 1024
+SUBTITLES = SubtitleManager(
+    TRANSLATOR,
+    CONFIG["_data_dir"],
+    FFMPEG,
+    FFPROBE or "ffprobe",
+    int(CONFIG.get("subtitleMaxUploadMb", 4096)),
+)
+INTERPRET_DIR = DATA_DIR / "interpret"
+INTERPRET_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class TTSRequest(BaseModel):
@@ -80,6 +93,7 @@ async def lifespan(_: FastAPI):
     threading.Thread(target=activate_default, daemon=True).start()
     yield
     SUPERVISOR.shutdown()
+    TRANSLATOR.shutdown()
 
 
 app = FastAPI(title="IndexTTS Studio", version="0.1.0", lifespan=lifespan)
@@ -111,10 +125,153 @@ async def engines() -> dict:
 async def activate_engine(engine_id: str) -> dict:
     if engine_id not in SUPERVISOR.engines:
         raise HTTPException(status_code=404, detail="unknown engine")
+    if SUBTITLES.has_active():
+        raise HTTPException(status_code=409, detail="字幕任务进行中，请先取消或等待完成")
     try:
+        TRANSLATOR.stop()
         return await run_in_threadpool(SUPERVISOR.activate, engine_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/translate/status", dependencies=[Depends(auth)])
+async def translate_status() -> dict:
+    return TRANSLATOR.capabilities()
+
+
+@app.post("/api/translate/activate", dependencies=[Depends(auth)])
+async def activate_translate() -> dict:
+    try:
+        SUPERVISOR.stop()
+        return await run_in_threadpool(TRANSLATOR.activate)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/translate/deactivate", dependencies=[Depends(auth)])
+async def deactivate_translate() -> dict:
+    await run_in_threadpool(TRANSLATOR.stop)
+    return TRANSLATOR.capabilities()
+
+
+SUBTITLE_SUFFIXES = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
+
+
+@app.post("/api/subtitles", dependencies=[Depends(auth)])
+async def create_subtitles(
+    file: UploadFile = File(...),
+    source: str = Form("auto"),
+    target: str = Form("zh"),
+    silence: float = Form(0.4),
+    batchSize: int = Form(5),
+) -> dict:
+    filename = file.filename or "video.mp4"
+    suffix = Path(filename).suffix.lower()
+    if suffix not in SUBTITLE_SUFFIXES:
+        raise HTTPException(status_code=400, detail="不支持的视频格式")
+    job, destination = SUBTITLES.create_job(
+        filename=filename,
+        source=source,
+        target=target,
+        silence=max(0.15, min(float(silence), 5.0)),
+        batch_size=max(1, min(int(batchSize), 10)),
+    )
+    size = 0
+    try:
+        with destination.open("wb") as handle:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > SUBTITLE_MAX_UPLOAD:
+                    raise HTTPException(status_code=413, detail="视频文件过大")
+                handle.write(chunk)
+        if size == 0:
+            raise HTTPException(status_code=400, detail="视频文件为空")
+        SUBTITLES.enqueue(job["id"])
+        return SUBTITLES.get(job["id"]) or job
+    except Exception:
+        SUBTITLES.cancel(job["id"])
+        shutil.rmtree(destination.parent, ignore_errors=True)
+        raise
+
+
+@app.get("/api/subtitles/{job_id}", dependencies=[Depends(auth)])
+async def get_subtitle_job(job_id: str) -> dict:
+    job = SUBTITLES.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    return job
+
+
+@app.get("/api/subtitles/{job_id}/events", dependencies=[Depends(auth)])
+async def subtitle_events(job_id: str) -> StreamingResponse:
+    if not SUBTITLES.get(job_id):
+        raise HTTPException(status_code=404, detail="job not found")
+
+    async def stream():
+        last = ""
+        while True:
+            job = SUBTITLES.get(job_id)
+            if not job:
+                yield "event: error\ndata: {\"error\":\"job not found\"}\n\n"
+                break
+            data = json.dumps(job, ensure_ascii=False)
+            if data != last:
+                yield f"event: state\ndata: {data}\n\n"
+                last = data
+            if job["status"] in {"succeeded", "failed", "canceled"}:
+                break
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/subtitles/{job_id}/cancel", dependencies=[Depends(auth)])
+async def cancel_subtitle_job(job_id: str) -> dict:
+    job = SUBTITLES.cancel(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    return job
+
+
+@app.get("/api/subtitles/{job_id}/download", dependencies=[Depends(auth)])
+async def download_subtitle(job_id: str, format: str = Query("srt")) -> FileResponse:
+    fmt = format if format in {"srt", "vtt"} else "srt"
+    path = SUBTITLES.download_path(job_id, fmt)
+    if not path:
+        raise HTTPException(status_code=404, detail="subtitle not found")
+    media_type = "application/x-subrip" if fmt == "srt" else "text/vtt"
+    return FileResponse(path, media_type=media_type, filename=path.name)
+
+
+@app.post("/api/interpret", dependencies=[Depends(auth)])
+async def interpret(
+    file: UploadFile = File(...),
+    target: str = Form("zh"),
+) -> dict:
+    temp = INTERPRET_DIR / f"{uuid.uuid4().hex}.wav"
+    size = 0
+    try:
+        with temp.open("wb") as handle:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_UPLOAD:
+                    raise HTTPException(status_code=413, detail="音频文件过大")
+                handle.write(chunk)
+        if size == 0:
+            raise HTTPException(status_code=400, detail="音频文件为空")
+        return await run_in_threadpool(SUBTITLES.interpret, temp, target)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 @app.get("/api/voices", dependencies=[Depends(auth)])

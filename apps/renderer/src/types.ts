@@ -94,3 +94,60 @@ export const EMOTION_LABELS: Record<EmotionMode, string> = {
 };
 
 export const VECTOR_LABELS = ["喜", "怒", "哀", "惧", "厌恶", "低落", "惊喜", "平静"];
+
+export interface TranslateStatus {
+  status: "idle" | "loading" | "ready" | "failed" | "stopped";
+  ready: boolean;
+  error: string | null;
+  loadSeconds: number | null;
+  missing: string[];
+  models: Record<string, string>;
+}
+
+export interface SubtitleCue {
+  start: number;
+  end: number;
+  source: string;
+  translation: string;
+  timestamps: "aligner" | "vad";
+  refusal?: boolean;
+  translation_mode?: string;
+}
+
+export type SubtitleJobStatus =
+  | "uploading"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "canceled";
+
+export interface SubtitleJob {
+  id: string;
+  status: SubtitleJobStatus;
+  stage: string;
+  step: number;
+  progress: number;
+  message: string;
+  video_name: string;
+  source: string;
+  target: string;
+  silence: number;
+  duration: number | null;
+  elapsed: number | null;
+  rtf: number | null;
+  cue_count: number;
+  cues: SubtitleCue[];
+  timings?: Record<string, number>;
+  filtered?: number;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface InterpretResult {
+  source: string;
+  translation: string;
+  language: string;
+  elapsed: number;
+}

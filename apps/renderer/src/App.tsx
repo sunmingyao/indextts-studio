@@ -36,6 +36,7 @@ import type {
 } from "./types";
 import { EMOTION_LABELS, LANGUAGE_LABELS, VECTOR_LABELS } from "./types";
 import AudioPicker from "./components/AudioPicker";
+import TranslateWorkspace from "./components/TranslateWorkspace";
 import appIcon from "./assets/app-icon.png";
 
 const DEFAULT_ADVANCED: Record<string, unknown> = {
@@ -86,6 +87,9 @@ interface ConfirmState {
 
 export default function App() {
   const [engines, setEngines] = useState<EnginesResponse | null>(null);
+  const [workspace, setWorkspace] = useState<"tts" | "translate">("tts");
+  const [translateBusy, setTranslateBusy] = useState(false);
+  const [miniMode, setMiniMode] = useState(false);
   const [voiceLibrary, setVoiceLibrary] = useState<Voice[]>([]);
   const [emotionLibrary, setEmotionLibrary] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState("");
@@ -228,7 +232,10 @@ export default function App() {
   }, []);
 
   async function handleSwitch(engineId: string) {
-    if (!engines || engineId === engines.active || switching) return;
+    if (!engines || switching) return;
+    if (workspace === "tts" && engineId === engines.active) return;
+    handleMiniMode(false);
+    setWorkspace("tts");
     setSwitching(engineId);
     setError("");
     try {
@@ -242,6 +249,19 @@ export default function App() {
     } finally {
       setSwitching(null);
     }
+  }
+
+  function handleTranslateMode() {
+    if (busy) return;
+    setWorkspace("translate");
+    setError("");
+  }
+
+  function handleMiniMode(enabled: boolean) {
+    setMiniMode(enabled);
+    void window.appBridge?.setMiniMode(enabled).catch((exc) => {
+      setError(exc instanceof Error ? exc.message : String(exc));
+    });
   }
 
   function clearDraft() {
@@ -563,16 +583,16 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${miniMode ? "app-mini" : ""}`}>
       <div className="window-drag">
         <div className="titlebar-left" />
         <div className="engine-switch">
           {engines.engines.map((engine) => (
             <button
               key={engine.id}
-              className={`engine-pill ${engine.active ? "active" : ""}`}
+              className={`engine-pill ${workspace === "tts" && engine.active ? "active" : ""}`}
               onClick={() => void handleSwitch(engine.id)}
-              disabled={Boolean(switching) || busy}
+              disabled={Boolean(switching) || busy || translateBusy}
               title={engine.description}
             >
               {engine.id === "mlx" ? <Zap size={15} /> : <Sparkles size={15} />}
@@ -580,12 +600,27 @@ export default function App() {
               {switching === engine.id && <Loader2 className="spin" size={13} />}
             </button>
           ))}
+          <button
+            className={`engine-pill ${workspace === "translate" ? "active" : ""}`}
+            onClick={handleTranslateMode}
+            disabled={Boolean(switching) || busy || translateBusy}
+            title="AI字幕与收音翻译"
+          >
+            <Languages size={15} />
+            <span>音频翻译</span>
+          </button>
         </div>
         <div className="titlebar-right">
-          <StatusDot status={engines.status} />
-          <button className="icon-btn" onClick={() => void refreshHistory()} title="刷新历史">
-            <RefreshCw size={15} />
-          </button>
+          {workspace === "translate" ? (
+            <span className="status-dot ready"><span />翻译模式</span>
+          ) : (
+            <StatusDot status={engines.status} />
+          )}
+          {workspace === "tts" && (
+            <button className="icon-btn" onClick={() => void refreshHistory()} title="刷新历史">
+              <RefreshCw size={15} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1079,6 +1114,14 @@ export default function App() {
           </div>
         </aside>
       </main>
+
+      {workspace === "translate" && (
+        <TranslateWorkspace
+          miniMode={miniMode}
+          onMiniMode={handleMiniMode}
+          onBusyChange={setTranslateBusy}
+        />
+      )}
 
       {saveAsSource && (
         <div className="modal-backdrop">

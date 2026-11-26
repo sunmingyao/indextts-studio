@@ -45,7 +45,7 @@ def normalize_voice(src: Path, dst: Path, ffmpeg: str, max_seconds: int = 15) ->
         "-vn",
         str(dst),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {proc.stderr[-1200:]}")
 
@@ -73,7 +73,7 @@ def probe_audio(path: Path, ffprobe: str | None) -> dict:
         "json",
         str(path),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise RuntimeError(f"ffprobe failed: {proc.stderr[-800:]}")
     payload = json.loads(proc.stdout or "{}")

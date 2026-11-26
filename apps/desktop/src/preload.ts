@@ -1,4 +1,4 @@
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 
 function arg(name: string): string {
   const prefix = `--${name}=`;
@@ -12,4 +12,8 @@ const token = arg("api-token");
 contextBridge.exposeInMainWorld("appConfig", {
   apiBase: port ? `http://127.0.0.1:${port}` : "http://127.0.0.1:8765",
   apiToken: token,
+});
+
+contextBridge.exposeInMainWorld("appBridge", {
+  setMiniMode: (enabled: boolean) => ipcRenderer.invoke("window:set-mini", enabled),
 });

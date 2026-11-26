@@ -4,6 +4,7 @@
   "ffprobe": "/opt/homebrew/bin/ffprobe",
   "dataDir": "data",
   "maxUploadMb": 50,
+  "subtitleMaxUploadMb": 4096,
   "engines": {
     "mlx": {
       "label": "极速版",
@@ -31,5 +32,13 @@
       "supportsDurationFactor": true,
       "speedHint": "约 4–10× 实时"
     }
+  },
+  "translator": {
+    "python": "envs/translate/bin/python",
+    "worker": "backend/workers/translate_worker.py",
+    "asrModel": "models/qwen3-asr-0.6b",
+    "alignerModel": "models/qwen3-forced-aligner-0.6b",
+    "llmModel": "models/qwen3-4b-instruct",
+    "hfHome": "models/qwen3-hf"
   }
 }

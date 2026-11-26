@@ -76,6 +76,8 @@ class WorkerProcess:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
         )
         threading.Thread(target=self._pump_logs, daemon=True).start()
@@ -242,6 +244,14 @@ class EngineSupervisor:
             if not self.worker or self.status != "ready":
                 raise RuntimeError("engine is not ready")
             return self.worker.synthesize(payload)
+
+    def stop(self) -> None:
+        with self.lock:
+            if self.worker:
+                self.worker.stop()
+                self.worker = None
+            self.active = None
+            self.status = "stopped"
 
     def shutdown(self) -> None:
         with self.lock:

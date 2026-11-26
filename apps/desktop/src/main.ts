@@ -1,4 +1,15 @@
-import { app, BrowserWindow, dialog, nativeImage } from "electron";
+import {
+  app,
+  BrowserWindow,
+  desktopCapturer,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  screen,
+  session,
+  systemPreferences,
+} from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -11,6 +22,13 @@ let win: BrowserWindow | null = null;
 let quitting = false;
 let backendPort = 0;
 let backendToken = "";
+let miniMode = false;
+let normalBounds: { x: number; y: number; width: number; height: number } | null = null;
+let normalMinimumSize: [number, number] = [1080, 720];
+let savedMenu: Menu | null = null;
+
+const MINI_WIDTH = 760;
+const MINI_HEIGHT = 76;
 
 const projectRoot = path.resolve(__dirname, "../../..");
 const codeRoot = app.isPackaged ? process.resourcesPath : projectRoot;
@@ -294,6 +312,60 @@ async function startBackend(): Promise<{ port: number; token: string }> {
   return { port, token };
 }
 
+ipcMain.handle("window:set-mini", (event, enabled: boolean) => {
+  const target = BrowserWindow.fromWebContents(event.sender);
+  if (!target) return false;
+  if (enabled === miniMode) return true;
+
+  if (enabled) {
+    normalBounds = target.getBounds();
+    normalMinimumSize = target.getMinimumSize() as [number, number];
+    savedMenu = Menu.getApplicationMenu();
+    miniMode = true;
+    Menu.setApplicationMenu(null);
+    target.setMinimumSize(0, 0);
+    target.setResizable(false);
+    target.setMaximizable(false);
+    target.setMinimizable(false);
+    target.setFullScreenable(false);
+    target.setAlwaysOnTop(true, "floating");
+    target.setHasShadow(false);
+    if (process.platform === "darwin") {
+      target.setWindowButtonVisibility(false);
+    }
+    const area = screen.getPrimaryDisplay().workArea;
+    target.setBounds({
+      x: area.x + area.width - MINI_WIDTH - 24,
+      y: area.y + 24,
+      width: MINI_WIDTH,
+      height: MINI_HEIGHT,
+    });
+    target.focus();
+    return true;
+  }
+
+  miniMode = false;
+  target.setAlwaysOnTop(false);
+  target.setResizable(true);
+  target.setMaximizable(true);
+  target.setMinimizable(true);
+  target.setFullScreenable(true);
+  target.setHasShadow(true);
+  if (process.platform === "darwin") {
+    target.setWindowButtonVisibility(true);
+  }
+  target.setMinimumSize(normalMinimumSize[0], normalMinimumSize[1]);
+  if (normalBounds) {
+    target.setBounds(normalBounds);
+  }
+  if (savedMenu) {
+    Menu.setApplicationMenu(savedMenu);
+    savedMenu = null;
+  }
+  target.focus();
+  return true;
+});
+
 async function createWindow(port: number, token: string): Promise<void> {
   win = new BrowserWindow({
     width: 1440,
@@ -353,6 +425,31 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    session.defaultSession.setDisplayMediaRequestHandler(
+      (_request, callback) => {
+        desktopCapturer.getSources({ types: ["screen"] }).then(
+          (sources) => {
+            if (!sources.length) {
+              callback(null as never);
+              return;
+            }
+            callback({ video: sources[0], audio: "loopback" });
+          },
+        ).catch((error) => {
+          console.error(
+            "[display-media] getSources failed",
+            error,
+            "screenAccess=",
+            process.platform === "darwin"
+              ? systemPreferences.getMediaAccessStatus("screen")
+              : "n/a",
+          );
+          callback(null as never);
+        });
+      },
+      { useSystemPicker: false },
+    );
+
     if (process.platform === "darwin" && app.dock && fs.existsSync(appIconPath)) {
       app.dock.setIcon(nativeImage.createFromPath(appIconPath));
     }

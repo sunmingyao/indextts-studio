@@ -11,6 +11,7 @@
     "dev:renderer": "vite --config apps/renderer/vite.config.ts",
     "backend:install": "bash scripts/setup-backend.sh",
     "runtime:setup": "bash scripts/setup-runtime.sh",
+    "translate:setup": "bash scripts/setup-translate.sh",
     "build:renderer": "vite build --config apps/renderer/vite.config.ts",
     "build:desktop": "tsc -p apps/desktop/tsconfig.json",
     "build": "npm run build:renderer && npm run build:desktop",
@@ -66,6 +67,10 @@
         "to": "scripts/setup-runtime.sh"
       },
       {
+        "from": "scripts/setup-translate.sh",
+        "to": "scripts/setup-translate.sh"
+      },
+      {
         "from": "vendor/index-tts",
         "to": "vendor/index-tts"
       },
@@ -86,7 +91,8 @@
       ],
       "category": "public.app-category.music",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "需要访问麦克风来录制声音参考。"
+        "NSMicrophoneUsageDescription": "需要访问麦克风来录制声音参考。",
+        "NSAudioCaptureUsageDescription": "需要访问系统音频来翻译正在播放的视频。"
       }
     }
   }
